@@ -36,6 +36,19 @@ __device__ __host__ void iterToColorSmooth(double smoothIter, int maxIter, unsig
     b = (unsigned char) (8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
 }
 
+__device__ __host__ unsigned char iterToGrayscale(double smoothIter, int maxIter) {
+    if (smoothIter >= maxIter) {
+        return 255;
+    }
+
+    double t = smoothIter / maxIter;
+    t = pow(t, 0.5); 
+
+    t = t / (t + 0.3); 
+
+    return (unsigned char)(fmin(1.0, t) * 255.0);
+}
+
 __global__ void mandelbrotKernelSupersampled(
     unsigned char* image,
     int width, int height, int maxIter,
@@ -46,7 +59,8 @@ __global__ void mandelbrotKernelSupersampled(
     int py = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (px < width && py < height) {
-        double rSum = 0.0, gSum = 0.0, bSum = 0.0;
+        double sum = 0.0;
+
         int totalSamples = samplesPerAxis * samplesPerAxis;
 
         for (int sy = 0; sy < samplesPerAxis; sy++) {
@@ -59,32 +73,24 @@ __global__ void mandelbrotKernelSupersampled(
 
                 double iter = mandelbrotSmooth(cr, ci, maxIter);
 
-                unsigned char r, g, b;
-                iterToColorSmooth(iter, maxIter, r, g, b);
-
-                rSum += r;
-                gSum += g;
-                bSum += b;
+                sum += iterToGrayscale(iter, maxIter);
             }
         }
 
-        int idx = (py * width + px) * 3;
-        image[idx + 0] = (unsigned char) (rSum / totalSamples);
-        image[idx + 1] = (unsigned char) (gSum / totalSamples);
-        image[idx + 2] = (unsigned char) (bSum / totalSamples);
+        int idx = py * width + px;
+        image[idx] = (unsigned char) (sum / totalSamples);
     }
 }
 
 int main() {
-    int width = 800, height = 600;
-    int maxIter = 20;
-    double xmin = -2.5, xmax = -1;
-    double ymin = -1.0, ymax = 1.0;
-    int samplesPerAxis = 20;
+    int width = 1800, height = 1200;
+    int maxIter = 2000;
+    double xmin = -2, xmax = 1;
+    double ymin = -1, ymax = 1;
+    int samplesPerAxis = 8;
 
-    size_t bytes = (size_t) width * height * 3;
+    size_t bytes = (size_t) width * height; 
     unsigned char* h_image = new unsigned char[bytes];
-
     unsigned char* d_image;
     deviceAlloc(&d_image, bytes);
 
@@ -97,11 +103,12 @@ int main() {
     cudaEvent_t gpuStart, gpuEnd;
     cudaEventCreate(&gpuStart);
     cudaEventCreate(&gpuEnd);
-
     cudaEventRecord(gpuStart);
+
     mandelbrotKernelSupersampled<<<blocks, threadsPerBlock>>>(
         d_image, width, height, maxIter, xmin, xmax, ymin, ymax, samplesPerAxis
     );
+
     cudaEventRecord(gpuEnd);
     cudaEventSynchronize(gpuEnd);
     CUDA_CHECK(cudaGetLastError());
@@ -112,14 +119,13 @@ int main() {
 
     copyToHost(h_image, d_image, bytes);
 
-    std::ofstream out("output/mandelbrot.ppm", std::ios::binary);
-    out << "P6\n" << width << " " << height << "\n255\n";
+    std::ofstream out("output/mandelbrot.pgm", std::ios::binary);
+    out << "P5\n" << width << " " << height << "\n255\n";
     out.write((char*) h_image, bytes);
 
     cudaEventDestroy(gpuStart);
     cudaEventDestroy(gpuEnd);
     deviceFree(d_image);
     delete[] h_image;
-
     return 0;
 }
