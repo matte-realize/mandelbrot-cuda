@@ -38,8 +38,8 @@ void iterToColor(
 int main() {
     int width = 800, height = 600;
     int maxIter = 256;
-    double xmin = -2.5, xmax = 1.0;
-    double ymin = -1.0, ymax = 1.0;
+    double xmin = -0.75, xmax = -0.74;
+    double ymin = 0.1, ymax = 0.11;
 
     std::ofstream out("output/frame.ppm", std::ios::binary);
     out << "P6\n" << width << " " << height << "\n255\n";
